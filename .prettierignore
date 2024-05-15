@@ -1,0 +1,17 @@
+./node_modules
+
+./dist
+
+.env
+.env.*
+*.log
+*.log.*
+*.log-*
+
+./public
+./public/*
+
+package-lock.json
+yarn.lock
+package.json
+tsconfig.json
