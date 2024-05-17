@@ -11,10 +11,10 @@ const launchBrowser = async (): Promise<any> => {
 };
 
 // Function to grab data for multiple client IDs
-const saveDataEXL = async (clientIDs: string[] , browser : Browser): Promise<string | void> => {
+const saveDataEXL = async (clientIDs: string[] , browser : Browser , totalDataCount:Function, totalDataSavedCount:Function): Promise<string | void> => {
     // Start a timer
     console.time('Total processing time');
-
+    
     // Create a new page in the browser
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080 }); // Set viewport size
@@ -35,6 +35,7 @@ const saveDataEXL = async (clientIDs: string[] , browser : Browser): Promise<str
         const workbook: ExcelJS.Workbook = new ExcelJS.Workbook();
         const worksheet: ExcelJS.Worksheet = workbook.addWorksheet('Data');
 
+        totalDataCount(clientIDs.length);
         // Iterate over each client ID
         for (let index = 0; index < clientIDs.length; index++) {
             const id: string = clientIDs[index];
@@ -120,6 +121,7 @@ const saveDataEXL = async (clientIDs: string[] , browser : Browser): Promise<str
     
                     // Stop measuring time
                     console.timeEnd(`Processing time for client ID: ${id}`);
+                    totalDataSavedCount(index + 1);
                 } catch (error) {
                     logger.error(`Attempt ${retryCount + 1} failed:`, error);
                     retryCount++;
