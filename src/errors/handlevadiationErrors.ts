@@ -1,5 +1,5 @@
-import mongoose from 'mongoose'
-import { IErrorSources, IGenericErrorResponse } from '../interfaces/error'
+import mongoose from 'mongoose';
+import { IErrorSources, IGenericErrorResponse } from '../interfaces/error';
 
 // ValidationError is thrown when a document fails validation. This error can be caught and handled by the handleValidationError function.
 const handleValidationError = (
@@ -14,7 +14,7 @@ const handleValidationError = (
     }
   )
 
-  const statusCode = 400
+  const statusCode = 400;
 
   return {
     statusCode,
@@ -23,4 +23,4 @@ const handleValidationError = (
   }
 }
 
-export default handleValidationError
+export default handleValidationError;
