@@ -38,7 +38,7 @@ export const saveDataEXL = async (req: Request, res: Response, next: NextFunctio
         // If data is not being saved, set the flag to true 
         res.status(202).json(new ApiResponse(202, {
             isSavingData: true,
-            message: "Data saving has started. You will receive an email once the process is complete"
+            message: 'Data saving has started. You will receive an email once the process is complete'
         })); // Send a response to the client
         isCollectingData = true; // Set the flag to true
         const browser = await launchBrowser(); // Launch a new browser
@@ -57,10 +57,10 @@ export const saveDataEXL = async (req: Request, res: Response, next: NextFunctio
 }
 
 export const closeAllBrowser = async (req: Request, res: Response, next: NextFunction) => {
-    if(!browserData) return res.status(202).json(new ApiResponse(202, { message: "No browser instance found" }));
+    if(!browserData) return res.status(202).json(new ApiResponse(202, { message: 'No browser instance found' }));
     try {
         await closeBrowser(browserData);
-        res.status(200).json(new ApiResponse(200, { message: "All browser closed" }));
+        res.status(200).json(new ApiResponse(200, { message: 'All browser closed' }));
     } catch (error) {
         next(error);
     }
