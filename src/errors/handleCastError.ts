@@ -1,5 +1,5 @@
-import mongoose from 'mongoose'
-import { IErrorSources, IGenericErrorResponse } from '../interfaces/error'
+import mongoose from 'mongoose';
+import { IErrorSources, IGenericErrorResponse } from '../interfaces/error';
 
 //CastError is thrown when a value is passed to mongoose that is not a valid type for the Schema type it is defined in. For example, passing a string to a Number type field. This error can be caught and handled by the handleCastError function.
 const handleCastError = (
@@ -12,7 +12,7 @@ const handleCastError = (
     },
   ]
 
-  const statusCode = 400
+  const statusCode = 400;
 
   return {
     statusCode,
@@ -21,4 +21,4 @@ const handleCastError = (
   }
 }
 
-export default handleCastError
+export default handleCastError;
