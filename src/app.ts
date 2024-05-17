@@ -2,15 +2,12 @@ import cors from 'cors';
 import express, { Application, NextFunction, Request, Response } from 'express';
 import path from 'path';
 import globalErrorHandler from './errors/globalErrorHandler';
-import dbConnect from './utils/dbConnect';
+
 import routes from './app/routes'
 
 const app:Application = express();
 // cors
 app.use(cors())
-
-// Connect to MongoDB 
-dbConnect();
 
 // Set EJS as the view engine
 app.set('view engine', 'ejs')

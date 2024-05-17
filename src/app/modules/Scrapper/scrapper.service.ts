@@ -1,17 +1,16 @@
 import ExcelJS from 'exceljs';
 import path from 'path';
-import puppeteer, { Browser } from 'puppeteer';
+import { Browser } from 'puppeteer';
 import logger from '../../../utils/logger';
 import ClientData from './scrapper.interface';
 
 
-const launchBrowser = async (): Promise<any> => {
-    const browser = await puppeteer.launch({ headless: false });
-    return browser;
-};
-
 // Function to grab data for multiple client IDs
 const saveDataEXL = async (clientIDs: string[] , browser : Browser , totalDataCount:Function, totalDataSavedCount:Function): Promise<string | void> => {
+    if(browser.isConnected() === false) {
+        // console.error('Browser disconnected');
+        return;
+    }
     // Start a timer
     console.time('Total processing time');
     
@@ -38,6 +37,10 @@ const saveDataEXL = async (clientIDs: string[] , browser : Browser , totalDataCo
         totalDataCount(clientIDs.length);
         // Iterate over each client ID
         for (let index = 0; index < clientIDs.length; index++) {
+            if(browser.isConnected() === false) {
+                // console.error('Browser disconnected');
+                return;
+            }
             const id: string = clientIDs[index];
             logger.info(`Processing client ID: ${id}`);
             // Start measuring time
@@ -47,6 +50,10 @@ const saveDataEXL = async (clientIDs: string[] , browser : Browser , totalDataCo
             let success: boolean = false;
 
             while (!success && retryCount < maxRetries) {
+                if(browser.isConnected() === false) {
+                    // console.error('Browser disconnected');
+                    return;
+                }
                 try {
                     // Navigate to the request page
                     const requestPageSelector: string = "#ctl00_Menu1_linkEligibilityRequest";
@@ -123,10 +130,14 @@ const saveDataEXL = async (clientIDs: string[] , browser : Browser , totalDataCo
                     console.timeEnd(`Processing time for client ID: ${id}`);
                     totalDataSavedCount(index + 1);
                 } catch (error) {
-                    logger.error(`Attempt ${retryCount + 1} failed:`, error);
-                    retryCount++;
-                    logger.info(`Retrying (${retryCount}/${maxRetries})...`);
-                    await new Promise(resolve => setTimeout(resolve, retryDelay)); // Wait before retrying
+                    if(browser.isConnected() === false) {
+                        // console.error('Browser disconnected');
+                        return;
+                    }
+                        logger.error(`Attempt ${retryCount + 1} failed:`, error);
+                        retryCount++;
+                        logger.info(`Retrying (${retryCount}/${maxRetries})...`);
+                        await new Promise(resolve => setTimeout(resolve, retryDelay)); // Wait before retrying
                 }
             }
     
@@ -155,5 +166,5 @@ const saveDataEXL = async (clientIDs: string[] , browser : Browser , totalDataCo
 }
 
 // Export the function
-export const scrapperService = { saveDataEXL ,launchBrowser};
+export const scrapperService = { saveDataEXL };
 
