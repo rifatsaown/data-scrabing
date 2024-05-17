@@ -56,12 +56,12 @@ const saveDataEXL = async (clientIDs: string[] , browser : Browser , totalDataCo
                 }
                 try {
                     // Navigate to the request page
-                    const requestPageSelector: string = "#ctl00_Menu1_linkEligibilityRequest";
+                    const requestPageSelector: string = '#ctl00_Menu1_linkEligibilityRequest';
                     await page.waitForSelector(requestPageSelector);
                     await page.click(requestPageSelector);
 
                     // Fill out the form and submit
-                    const clientIDSelector: string = "#ctl00_ContentPlaceHolder1_textBoxClientID";
+                    const clientIDSelector: string = '#ctl00_ContentPlaceHolder1_textBoxClientID';
                     await page.waitForSelector(clientIDSelector);
                     await page.type(clientIDSelector, id);
                     await page.waitForSelector('#ctl00_ContentPlaceHolder1_buttonSubmit');
@@ -123,7 +123,7 @@ const saveDataEXL = async (clientIDs: string[] , browser : Browser , totalDataCo
                     success = true;
 
                     logger.info(`Data for client ID: ${id} processed successfully!`);
-                    logger.info(index +1 + " of " + clientIDs.length + " completed"); 
+                    logger.info(index +1 + ' of ' + clientIDs.length + ' completed'); 
                     
     
                     // Stop measuring time
@@ -150,7 +150,7 @@ const saveDataEXL = async (clientIDs: string[] , browser : Browser , totalDataCo
         const filePath: string = path.join(__dirname, '../../../../temp', 'client_data.xlsx');
         await workbook.xlsx.writeFile(filePath);
 
-        logger.info("Data saved successfully!");
+        logger.info('Data saved successfully!');
     
         // Stop measuring total time
         console.timeEnd('Total processing time');
@@ -167,4 +167,3 @@ const saveDataEXL = async (clientIDs: string[] , browser : Browser , totalDataCo
 
 // Export the function
 export const scrapperService = { saveDataEXL };
-
