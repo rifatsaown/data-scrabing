@@ -39,7 +39,7 @@ const emailer = async (email:string, subject:string, htmlContent:string, filePat
       html: htmlContent,
       attachments: [
         {
-          filename: "report.xlsx",
+          filename: `${Date.now()}-Result_file.xlsx`,
           path: filePath
         }
       ]
