@@ -53,8 +53,8 @@ const totalDataSavedCount = (userId: string, data: number) => {
 };
 
 // Get user ID from request
-const getUserIdFromRequest = (req: Request): string | null => {
-    return req.body.userId || req.headers['x-user-id'] || req.query.userId || null;
+const getUserIdFromRequest = (req: Request): string => {
+    return req.body.username
 };
 
 // Handle save data EXL
