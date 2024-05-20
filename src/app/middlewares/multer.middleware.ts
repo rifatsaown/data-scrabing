@@ -11,7 +11,7 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     // Check if the file type is XLSX
-    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+    if (file.mimetype === 'text/csv') {
         cb(null, true);
     } else {
         cb(null, false);

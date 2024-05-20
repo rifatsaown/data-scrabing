@@ -1,12 +1,12 @@
 import express from 'express';
-import { fileHandleRoutes } from '../modules/FileHandle/filehandle.routes';
+import { formHandleRoutes } from '../modules/FormHandle/formHandle.routes';
 import { scrapperRoutes } from '../modules/Scrapper/scrapper.routes';
 
 const router = express.Router();
 
 const moduleRoutes = [
     { path: '/scrapper', route: scrapperRoutes },
-    { path: '/file', route: fileHandleRoutes }
+    { path: '/form', route: formHandleRoutes }
 ]
 
 moduleRoutes.forEach(route => router.use(route.path, route.route));
