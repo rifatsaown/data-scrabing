@@ -1,5 +1,5 @@
-import nodemailer from "nodemailer";
 import fs from "fs";
+import nodemailer from "nodemailer";
 
 
 const validateEnvVariables = () => {

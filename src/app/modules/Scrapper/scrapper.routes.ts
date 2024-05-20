@@ -7,4 +7,4 @@ router.post('/',saveDataEXL)
 router.post('/close',closeAllBrowser)
 
 
-export const scrapperRoutes = router
+export const scrapperRoutes = router;

@@ -6,7 +6,7 @@ const router = express.Router();
 
 const moduleRoutes = [
     { path: '/scrapper', route: scrapperRoutes },
-    { path: '/filehandle', route: fileHandleRoutes }
+    { path: '/file', route: fileHandleRoutes }
 ]
 
 moduleRoutes.forEach(route => router.use(route.path, route.route));
