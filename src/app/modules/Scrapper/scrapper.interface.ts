@@ -1,3 +1,5 @@
+import { Browser } from "puppeteer";
+
 interface ClientData {
   clientID?: string;
   clientName?: string;
@@ -15,4 +17,11 @@ interface ClientData {
   clientPlanDate?: string;
 }
 
-export default ClientData;
+
+interface UserSession {
+  browser: Browser;
+  totalData: number;
+  totalDataSaved: number;
+}
+
+export { ClientData, UserSession };

@@ -1,8 +1,14 @@
 import ExcelJS from 'exceljs';
+import { Request, Response } from 'express';
 import path from 'path';
-import { Browser } from 'puppeteer';
+import puppeteer, { Browser } from 'puppeteer';
+import { ApiResponse } from '../../../utils/ApiResponse';
+import sendEmail from '../../../utils/emailSender';
 import logger from '../../../utils/logger';
-import ClientData from './scrapper.interface';
+import { ClientData, UserSession } from './scrapper.interface';
+import userSessions from '../../../utils/userSeassion';
+
+
 
 const saveDataEXL = async (
     clientIDs: string[],
@@ -131,4 +137,100 @@ const saveDataEXL = async (
     }
 };
 
-export const scrapperService = { saveDataEXL };
+// Get user ID from request
+const getUserIdFromRequest = (req: Request): string => {
+    return req.body.username
+};
+
+
+// Launch browser
+const launchBrowser = async (): Promise<Browser> => {
+    console.log('Launching a new browser instance...');
+    return await puppeteer.launch({ headless: false });
+};
+
+// Total data count
+const totalDataCount = (userId: string, data: number) => {
+    const session = userSessions.get(userId);
+    if (session) {
+        session.totalData = data;
+    }
+};
+
+// Total data saved count
+const totalDataSavedCount = (userId: string, data: number) => {
+    const session = userSessions.get(userId);
+    if (session) {
+        session.totalDataSaved = data;
+    }
+};
+
+// Close browser
+const closeBrowser = async (userId: string, decreaseActiveInstances:Function ) => {
+    console.log(`Closing browser for user: ${userId}`);
+    const session = scrapperService.userSessions.get(userId);
+    if (session) {
+        await session.browser.close();
+        scrapperService.userSessions.delete(userId);
+        decreaseActiveInstances();
+    }
+};
+
+// Handle save data EXL
+const handleSaveDataEXL = async (req: Request, res: Response , increaseActiveInstances:Function,decreaseActiveInstances:Function ) => {
+    const userId = getUserIdFromRequest(req); // Get user ID from request
+    if (!userId) {
+        return res.status(400).json(new ApiResponse(400, { message: 'User ID is required' }));
+    }
+    logger.info(`Handling request for user: ${userId}`); 
+    try {
+        const session = userSessions.get(userId);
+        if (session) {
+            console.log(`Session already exists for user: ${userId}`);
+            return res.status(202).json(new ApiResponse(202, {
+                isSavingData: true,
+                message: `Data saving is in progress. ${session.totalDataSaved} out of ${session.totalData} data saved.`,
+            }));
+        }
+
+        res.status(202).json(new ApiResponse(202, {
+            isSavingData: true,
+            message: 'Data saving has started. You will receive an email once the process is complete',
+        }));
+
+        const browser = await launchBrowser();
+        userSessions.set(userId, {
+            browser,
+            totalData: 0,
+            totalDataSaved: 0,
+        });
+        increaseActiveInstances();
+
+        const result = await scrapperService.saveDataEXL(
+            req.body.clientID,
+            browser,
+            (data) => totalDataCount(userId, data),
+            (data) => totalDataSavedCount(userId, data),
+        );
+
+        if (result) {
+            sendEmail(result);
+        }
+
+        await closeBrowser(userId , decreaseActiveInstances);
+    } catch (error) {
+        logger.error(error);
+        if (!res.headersSent) {
+            res.status(500).json(new ApiResponse(500, { message: 'An error occurred while processing your request.' }));
+        }
+    }
+};
+
+export const scrapperService = { 
+    saveDataEXL,
+    handleSaveDataEXL,
+    getUserIdFromRequest,
+    userSessions,
+    launchBrowser,
+    closeBrowser,
+ };

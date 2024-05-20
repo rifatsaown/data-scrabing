@@ -9,4 +9,14 @@ const storage = multer.diskStorage({
     },
 });
 
-export const upload = multer({ storage: storage });
+const fileFilter = (req: Express.Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+    // Check if the file type is XLSX
+    if (file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+        cb(null, true);
+    } else {
+        cb(null, false);
+    }
+};
+const upload = multer({ storage: storage, fileFilter: fileFilter });
+
+export default upload;
