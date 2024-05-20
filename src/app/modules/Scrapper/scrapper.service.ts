@@ -1,17 +1,18 @@
-import ExcelJS from 'exceljs';
+import { createObjectCsvWriter } from 'csv-writer';
 import { Request, Response } from 'express';
 import path from 'path';
 import puppeteer, { Browser } from 'puppeteer';
 import { ApiResponse } from '../../../utils/ApiResponse';
 import sendEmail from '../../../utils/emailSender';
 import logger from '../../../utils/logger';
-import { ClientData, UserSession } from './scrapper.interface';
 import userSessions from '../../../utils/userSeassion';
+import { ClientData } from './scrapper.interface';
 
 
 
-const saveDataEXL = async (
+const saveDatatoEXL = async (
     clientIDs: string[],
+    req: Request,
     browser: Browser,
     totalDataCount: (data: number) => void,
     totalDataSavedCount: (data: number) => void,
@@ -24,18 +25,40 @@ const saveDataEXL = async (
 
     const maxRetries = 1;
     const retryDelay = 3000;
+    const csvFilePath = path.join(__dirname, '../../../../temp', `client_data_${new Date().getTime()}.csv`);
+    
+
+    // Initialize the CSV writer
+    const csvWriter = createObjectCsvWriter({
+        path: csvFilePath,
+        header: [
+            { id: 'clientID', title: 'Client ID' },
+            { id: 'clientName', title: 'Client Name' },
+            { id: 'clientGender', title: 'Gender' },
+            { id: 'clientSSN', title: 'SSN' },
+            { id: 'clientDOB', title: 'Date of Birth' },
+            { id: 'clientAnniversaryDate', title: 'Anniversary Date' },
+            { id: 'clientRecertification', title: 'Recertification' },
+            { id: 'clientAddress1', title: 'Address 1' },
+            { id: 'clientAddress2', title: 'Address 2' },
+            { id: 'clientCityStateZip', title: 'City, State Zip' },
+            { id: 'clientCounty', title: 'County' },
+            { id: 'clientOffice', title: 'Office' },
+            { id: 'clientDateOfService', title: 'Date of Service' },
+            { id: 'clientPlanDate', title: 'Plan Date' },
+        ]
+    });
 
     try {
         await page.goto(process.env.SITE_URL!);
-        await page.type('#Username', process.env.SITE_USERNAME!);
-        await page.type('#Password', process.env.SITE_PASSWORD!);
+        await page.type('#Username', (req.body.username).toString());
+        await page.type('#Password', (req.body.pass).toString());
         await page.click('#chkbxAgree');
         await page.click('#btnAgreeLogin');
 
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet('Data');
-
         totalDataCount(clientIDs.length);
+
+        const records: ClientData[] = [];
 
         for (let index = 0; index < clientIDs.length; index++) {
             if (!browser.isConnected()) return;
@@ -84,27 +107,7 @@ const saveDataEXL = async (
                         };
                     });
 
-                    if (index === 0) {
-                        worksheet.getRow(1).font = { bold: true };
-                        const header = ['Client ID', 'Client Name', 'Gender', 'SSN', 'Date of Birth', 'Anniversary Date', 'Recertification', 'Address 1', 'Address 2', 'City, State Zip', 'County', 'Office', 'Date of Service', 'Plan Date'];
-                        worksheet.columns = header.map((key) => ({ header: key, key, width: 20 }));
-                    }
-
-                    const worksheetRow = worksheet.getRow(index + 2);
-                    worksheetRow.getCell('Client ID').value = clientData.clientID;
-                    worksheetRow.getCell('Client Name').value = clientData.clientName;
-                    worksheetRow.getCell('Gender').value = clientData.clientGender;
-                    worksheetRow.getCell('SSN').value = clientData.clientSSN;
-                    worksheetRow.getCell('Date of Birth').value = clientData.clientDOB;
-                    worksheetRow.getCell('Anniversary Date').value = clientData.clientAnniversaryDate;
-                    worksheetRow.getCell('Recertification').value = clientData.clientRecertification;
-                    worksheetRow.getCell('Address 1').value = clientData.clientAddress1;
-                    worksheetRow.getCell('Address 2').value = clientData.clientAddress2;
-                    worksheetRow.getCell('City, State Zip').value = clientData.clientCityStateZip;
-                    worksheetRow.getCell('County').value = clientData.clientCounty;
-                    worksheetRow.getCell('Office').value = clientData.clientOffice;
-                    worksheetRow.getCell('Date of Service').value = clientData.clientDateOfService;
-                    worksheetRow.getCell('Plan Date').value = clientData.clientPlanDate;
+                    records.push(clientData);
                     success = true;
 
                     logger.info(`Data for client ID: ${id} processed successfully!`);
@@ -123,19 +126,20 @@ const saveDataEXL = async (
             }
         }
 
-        const filePath = path.join(__dirname, '../../../../temp', `client_data_${new Date().getTime()}.xlsx`);
-        await workbook.xlsx.writeFile(filePath);
+        // Write the records to the CSV file
+        await csvWriter.writeRecords(records);
 
         logger.info('Data saved successfully!');
         console.timeEnd('Total processing time');
         await browser.close();
 
-        return `${filePath}`;
+        return `${csvFilePath}`;
     } catch (error) {
         logger.error('Error occurred:', error);
         await browser.close();
     }
 };
+
 
 // Get user ID from request
 const getUserIdFromRequest = (req: Request): string => {
@@ -177,7 +181,7 @@ const closeBrowser = async (userId: string, decreaseActiveInstances:Function ) =
 };
 
 // Handle save data EXL
-const handleSaveDataEXL = async (req: Request, res: Response , increaseActiveInstances:Function,decreaseActiveInstances:Function ) => {
+const handleSaveDataEXL = async (req: Request, res: Response , increaseActiveInstances:Function,decreaseActiveInstances:Function ) => {  
     const userId = getUserIdFromRequest(req); // Get user ID from request
     if (!userId) {
         return res.status(400).json(new ApiResponse(400, { message: 'User ID is required' }));
@@ -191,6 +195,10 @@ const handleSaveDataEXL = async (req: Request, res: Response , increaseActiveIns
                 isSavingData: true,
                 message: `Data saving is in progress. ${session.totalDataSaved} out of ${session.totalData} data saved.`,
             }));
+        }
+        const clientIDs = req.body.clientID;
+        if (!clientIDs || clientIDs.length === 0) {
+            return res.status(400).json(new ApiResponse(400, { message: 'Client ID and Password are required' }));
         }
 
         res.status(202).json(new ApiResponse(202, {
@@ -206,15 +214,21 @@ const handleSaveDataEXL = async (req: Request, res: Response , increaseActiveIns
         });
         increaseActiveInstances();
 
-        const result = await scrapperService.saveDataEXL(
+        const result = await saveDatatoEXL(
             req.body.clientID,
+            req,
             browser,
             (data) => totalDataCount(userId, data),
             (data) => totalDataSavedCount(userId, data),
         );
 
-        if (result) {
+        if (result && !req.body.dataFileTrue) {
             sendEmail(result);
+        }
+
+        if(result && req.body.dataFileTrue && req.body.dataFilePath){
+            console.log(result);
+            console.log(req.body.dataFilePath);
         }
 
         await closeBrowser(userId , decreaseActiveInstances);
@@ -227,7 +241,7 @@ const handleSaveDataEXL = async (req: Request, res: Response , increaseActiveIns
 };
 
 export const scrapperService = { 
-    saveDataEXL,
+    saveDatatoEXL,
     handleSaveDataEXL,
     getUserIdFromRequest,
     userSessions,

@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from 'express';
-
+import fs from 'fs';
 import { ApiResponse } from '../../../utils/ApiResponse';
 import logger from '../../../utils/logger';
 import userSessions from '../../../utils/userSeassion';
@@ -25,7 +25,6 @@ const decreaseActiveInstances = () => {
 
 
 export const saveDataEXL = async (req: Request, res: Response, next: NextFunction) => {
-    console.log('Received request for saveDataEXL');
     // Get user ID from the request
     const userId = scrapperService.getUserIdFromRequest(req);
     if (!userId) {
@@ -33,6 +32,10 @@ export const saveDataEXL = async (req: Request, res: Response, next: NextFunctio
     }
     // Check if the user is already using the service
     if (userSessions.has(userId)) {
+        const datafile = req.body?.dataFilePath;
+        if (datafile) {
+            fs.unlinkSync(datafile);
+        }
         return await scrapperService.handleSaveDataEXL(req, res, increaseActiveInstances, decreaseActiveInstances);
     }
     // Check if the maximum number of instances is reached
