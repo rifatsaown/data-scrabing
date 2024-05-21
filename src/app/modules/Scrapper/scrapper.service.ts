@@ -9,30 +9,29 @@ import userSessions from '../../../utils/userSeassion';
 import { ClientData } from './scrapper.interface';
 
 let browserInstance: Browser | null = null;
+const timeout = 120000; // Increased timeout to 2 minutes for page actions
 
 const saveDatatoEXL = async (
     clientIDs: string[],
     req: Request,
     totalDataCount: (data: number) => void,
     totalDataSavedCount: (data: number) => void,
-): Promise<string | void> => {
+  ): Promise<string | void> => {
     if (!browserInstance || !browserInstance.isConnected()) return;
-
+  
     const maxRetries = 3;
     const retryDelay = 3000;
-    const timeout = 60000; // 60 seconds timeout for page actions
+    const timeout = 120000; // Increased timeout to 2 minutes for page actions
     const csvFilePath = path.join(__dirname, '../../../../temp', `client_data_${new Date().getTime()}.csv`);
-
+  
     console.time('Total processing time');
     const records: ClientData[] = [];
-
-    // Determine clients per page based on total clients
-    const clientsPerPage = Math.ceil(clientIDs.length / 4);
+  
+    const clientsPerPage = Math.ceil(clientIDs.length / 2);
     logger.info(`Clients per page: ${clientsPerPage}`);
     const totalClients = clientIDs.length;
     totalDataCount(totalClients);
 
-    // Initialize the CSV writer
     const csvWriter = createObjectCsvWriter({
         path: csvFilePath,
         header: [
@@ -53,42 +52,53 @@ const saveDatatoEXL = async (
         ]
     });
 
-    const pagePromises = [];
+     const pagePromises = [];
     for (let index = 0; index < totalClients; index += clientsPerPage) {
-        const clientIDSubset = clientIDs.slice(index, index + clientsPerPage);
-        pagePromises.push(processPage(clientIDSubset, req, records, maxRetries, retryDelay, timeout, totalDataSavedCount));
+    const clientIDSubset = clientIDs.slice(index, index + clientsPerPage);
+    pagePromises.push(processPageOptimized(clientIDSubset, req, records, maxRetries, retryDelay, timeout, totalDataSavedCount));
     }
     logger.info(`Total pages: ${pagePromises.length}`);
 
     await Promise.all(pagePromises);
 
-    // Write the records to the CSV file
-    await csvWriter.writeRecords(records);
-
-    console.log(`Expected records: ${clientIDs.length}, Processed records: ${records.length}`);
-    if (records.length !== clientIDs.length) {
-        console.warn('Some records were not processed. Please check the logs for details.');
+    let retryCount = 0;
+    const maxRetriesForResolving = 3;
+    while (records.length !== clientIDs.length && retryCount < maxRetriesForResolving) {
+    logger.warn(`Some records were not processed. Retrying... Attempt ${retryCount + 1}`);
+    const failedClientIDs = clientIDs.filter(id => !records.some(record => record.clientID === id));
+    const failedRecords: ClientData[] = [];
+    const failedPagePromises = [];
+    for (let index = 0; index < failedClientIDs.length; index += clientsPerPage) {
+      const clientIDSubset = failedClientIDs.slice(index, index + clientsPerPage);
+      failedPagePromises.push(processPageOptimized(clientIDSubset, req, failedRecords, maxRetries, retryDelay, timeout, totalDataSavedCount));
+    }
+    await Promise.all(failedPagePromises);
+    records.push(...failedRecords);
+    retryCount++;
     }
 
+    
+
+    const chunkSize = 100;
+    for (let i = 0; i < records.length; i += chunkSize) {
+      const chunk = records.slice(i, i + chunkSize);
+      await csvWriter.writeRecords(chunk);
+    }
+  
+    console.log(`Expected records: ${clientIDs.length}, Processed records: ${records.length}`);
+    if (records.length !== clientIDs.length) {
+      console.warn('Some records were not processed. Please check the logs for details.');
+    }
+  
     console.timeEnd('Total processing time');
     logger.info('Data saved successfully!');
-
+  
     return `${csvFilePath}`;
 };
 
-const processPage = async (
-    clientIDSubset: string[],
-    req: Request,
-    records: ClientData[],
-    maxRetries: number,
-    retryDelay: number,
-    timeout: number,
-    totalDataSavedCount: (data: number) => void,
-) => {
+async function processPageOptimized(clientIDSubset: string[], req: Request, records: ClientData[], maxRetries: number, retryDelay: number, timeout: number, totalDataSavedCount: (data: number) => void) {
     if (!browserInstance || !browserInstance.isConnected()) return;
-
     const page = await browserInstance.newPage();
-    page.setDefaultNavigationTimeout(timeout);
     page.setDefaultTimeout(timeout);
 
     try {
@@ -137,7 +147,9 @@ const processPage = async (
                         };
                     });
 
-                    records.push(clientData);
+                    if(clientData.clientID) {
+                        records.push(clientData);
+                    }
                     success = true;
                     totalDataSavedCount(records.length);
                     logger.info(`Data for client ID: ${id} processed successfully!`);
@@ -160,15 +172,10 @@ const processPage = async (
 };
 
 
-
-
-
-
 // Get user ID from request
 const getUserIdFromRequest = (req: Request): string => {
     return req.body.username;
 };
-
 
 // Launch browser
 const launchBrowser = async (): Promise<Browser> => {
@@ -176,7 +183,7 @@ const launchBrowser = async (): Promise<Browser> => {
         return browserInstance;
     }
     console.log('Launching a new browser instance...');
-    browserInstance = await puppeteer.launch({});
+    browserInstance = await puppeteer.launch({ headless: true,  protocolTimeout: timeout });
     return browserInstance;
 };
 
@@ -214,11 +221,10 @@ const handleSaveDataEXL = async (req: Request, res: Response, increaseActiveInst
     if (!userId) {
         return res.status(400).json(new ApiResponse(400, { message: 'User ID is required' }));
     }
-    logger.info(`Handling request for user: ${userId}`);
+    // logger.info(`Handling request for user: ${userId}`);
     try {
         const session = userSessions.get(userId);
         if (session) {
-            console.log(`Session already exists for user: ${userId}`);
             return res.status(202).json(new ApiResponse(202, {
                 isSavingData: true,
                 message: `Data saving is in progress. ${session.totalDataSaved} out of ${session.totalData} data saved.`,
