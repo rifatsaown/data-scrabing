@@ -48,16 +48,16 @@ export const saveDataEXL = async (req: Request, res: Response, next: NextFunctio
     await scrapperService.handleSaveDataEXL(req, res, increaseActiveInstances, decreaseActiveInstances);
 };
 
-export const closeAllBrowser = async (req: Request, res: Response, next: NextFunction) => {
-    const userId = scrapperService.getUserIdFromRequest(req);
-    if (!userId) {
-        return res.status(400).json(new ApiResponse(400, { message: 'User ID is required' }));
-    }
-    console.log(`Received request to close browser for user: ${userId}`);
-    try {
-        await scrapperService.closeBrowser(userId , decreaseActiveInstances);
-        res.status(200).json(new ApiResponse(200, { message: 'Browser closed for the user' }));
-    } catch (error) {
-        next(error);
-    }
-};
+// export const closeAllBrowser = async (req: Request, res: Response, next: NextFunction) => {
+//     const userId = scrapperService.getUserIdFromRequest(req);
+//     if (!userId) {
+//         return res.status(400).json(new ApiResponse(400, { message: 'User ID is required' }));
+//     }
+//     console.log(`Received request to close browser for user: ${userId}`);
+//     try {
+//         await scrapperService.closeBrowser(userId , decreaseActiveInstances);
+//         res.status(200).json(new ApiResponse(200, { message: 'Browser closed for the user' }));
+//     } catch (error) {
+//         next(error);
+//     }
+// };
