@@ -8,25 +8,29 @@ import logger from '../../../utils/logger';
 import userSessions from '../../../utils/userSeassion';
 import { ClientData } from './scrapper.interface';
 
-
+let browserInstance: Browser | null = null;
 
 const saveDatatoEXL = async (
     clientIDs: string[],
     req: Request,
-    browser: Browser,
     totalDataCount: (data: number) => void,
     totalDataSavedCount: (data: number) => void,
 ): Promise<string | void> => {
-    if (!browser.isConnected()) return;
+    if (!browserInstance || !browserInstance.isConnected()) return;
+
+    const maxRetries = 3;
+    const retryDelay = 3000;
+    const timeout = 60000; // 60 seconds timeout for page actions
+    const csvFilePath = path.join(__dirname, '../../../../temp', `client_data_${new Date().getTime()}.csv`);
 
     console.time('Total processing time');
-    const page = await browser.newPage();
-    await page.setViewport({ width: 1920, height: 1080 });
+    const records: ClientData[] = [];
 
-    const maxRetries = 1;
-    const retryDelay = 3000;
-    const csvFilePath = path.join(__dirname, '../../../../temp', `client_data_${new Date().getTime()}.csv`);
-    
+    // Determine clients per page based on total clients
+    const clientsPerPage = Math.ceil(clientIDs.length / 4);
+    logger.info(`Clients per page: ${clientsPerPage}`);
+    const totalClients = clientIDs.length;
+    totalDataCount(totalClients);
 
     // Initialize the CSV writer
     const csvWriter = createObjectCsvWriter({
@@ -49,30 +53,56 @@ const saveDatatoEXL = async (
         ]
     });
 
+    const pagePromises = [];
+    for (let index = 0; index < totalClients; index += clientsPerPage) {
+        const clientIDSubset = clientIDs.slice(index, index + clientsPerPage);
+        pagePromises.push(processPage(clientIDSubset, req, records, maxRetries, retryDelay, timeout, totalDataSavedCount));
+    }
+    logger.info(`Total pages: ${pagePromises.length}`);
+
+    await Promise.all(pagePromises);
+
+    // Write the records to the CSV file
+    await csvWriter.writeRecords(records);
+
+    console.log(`Expected records: ${clientIDs.length}, Processed records: ${records.length}`);
+    if (records.length !== clientIDs.length) {
+        console.warn('Some records were not processed. Please check the logs for details.');
+    }
+
+    console.timeEnd('Total processing time');
+    logger.info('Data saved successfully!');
+
+    return `${csvFilePath}`;
+};
+
+const processPage = async (
+    clientIDSubset: string[],
+    req: Request,
+    records: ClientData[],
+    maxRetries: number,
+    retryDelay: number,
+    timeout: number,
+    totalDataSavedCount: (data: number) => void,
+) => {
+    if (!browserInstance || !browserInstance.isConnected()) return;
+
+    const page = await browserInstance.newPage();
+    page.setDefaultNavigationTimeout(timeout);
+    page.setDefaultTimeout(timeout);
+
     try {
-        await page.goto(process.env.SITE_URL!);
+        await page.goto("https://epaces.emedny.org");
         await page.type('#Username', (req.body.username).toString());
         await page.type('#Password', (req.body.pass).toString());
         await page.click('#chkbxAgree');
         await page.click('#btnAgreeLogin');
 
-        totalDataCount(clientIDs.length);
-
-        const records: ClientData[] = [];
-
-        for (let index = 0; index < clientIDs.length; index++) {
-            if (!browser.isConnected()) return;
-
-            const id = clientIDs[index];
-            logger.info(`Processing client ID: ${id}`);
-            console.time(`Processing time for client ID: ${id}`);
-
+        for (const id of clientIDSubset) {
             let retryCount = 0;
             let success = false;
 
             while (!success && retryCount < maxRetries) {
-                if (!browser.isConnected()) return;
-
                 try {
                     await page.waitForSelector('#ctl00_Menu1_linkEligibilityRequest');
                     await page.click('#ctl00_Menu1_linkEligibilityRequest');
@@ -109,48 +139,45 @@ const saveDatatoEXL = async (
 
                     records.push(clientData);
                     success = true;
-
+                    totalDataSavedCount(records.length);
                     logger.info(`Data for client ID: ${id} processed successfully!`);
-                    console.timeEnd(`Processing time for client ID: ${id}`);
-                    totalDataSavedCount(index + 1);
                 } catch (error) {
-                    logger.error(`Attempt ${retryCount + 1} failed:`, error);
+                    logger.error(`Attempt ${retryCount + 1} failed for client ID: ${id}`, error);
                     retryCount++;
-                    logger.info(`Retrying (${retryCount}/${maxRetries})...`);
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
                 }
             }
 
             if (!success) {
-                logger.info(`Maximum retry attempts reached for client ID: ${id}. Skipping...`);
+                logger.error(`Failed to process client ID: ${id} after ${maxRetries} attempts`);
             }
         }
-
-        // Write the records to the CSV file
-        await csvWriter.writeRecords(records);
-
-        logger.info('Data saved successfully!');
-        console.timeEnd('Total processing time');
-        await browser.close();
-
-        return `${csvFilePath}`;
     } catch (error) {
-        logger.error('Error occurred:', error);
-        await browser.close();
+        logger.error('Error occurred on page:', error);
+    } finally {
+        await page.close();
     }
 };
 
 
+
+
+
+
 // Get user ID from request
 const getUserIdFromRequest = (req: Request): string => {
-    return req.body.username
+    return req.body.username;
 };
 
 
 // Launch browser
 const launchBrowser = async (): Promise<Browser> => {
+    if (browserInstance && browserInstance.isConnected()) {
+        return browserInstance;
+    }
     console.log('Launching a new browser instance...');
-    return await puppeteer.launch({ headless: false });
+    browserInstance = await puppeteer.launch({});
+    return browserInstance;
 };
 
 // Total data count
@@ -170,23 +197,24 @@ const totalDataSavedCount = (userId: string, data: number) => {
 };
 
 // Close browser
-const closeBrowser = async (userId: string, decreaseActiveInstances:Function ) => {
+const closeBrowser = async (userId: string, decreaseActiveInstances: Function) => {
     console.log(`Closing browser for user: ${userId}`);
     const session = scrapperService.userSessions.get(userId);
     if (session) {
         await session.browser.close();
         scrapperService.userSessions.delete(userId);
         decreaseActiveInstances();
+        browserInstance = null;
     }
 };
 
 // Handle save data EXL
-const handleSaveDataEXL = async (req: Request, res: Response , increaseActiveInstances:Function,decreaseActiveInstances:Function ) => {  
+const handleSaveDataEXL = async (req: Request, res: Response, increaseActiveInstances: Function, decreaseActiveInstances: Function) => {
     const userId = getUserIdFromRequest(req); // Get user ID from request
     if (!userId) {
         return res.status(400).json(new ApiResponse(400, { message: 'User ID is required' }));
     }
-    logger.info(`Handling request for user: ${userId}`); 
+    logger.info(`Handling request for user: ${userId}`);
     try {
         const session = userSessions.get(userId);
         if (session) {
@@ -217,7 +245,6 @@ const handleSaveDataEXL = async (req: Request, res: Response , increaseActiveIns
         const result = await saveDatatoEXL(
             req.body.clientID,
             req,
-            browser,
             (data) => totalDataCount(userId, data),
             (data) => totalDataSavedCount(userId, data),
         );
@@ -226,12 +253,12 @@ const handleSaveDataEXL = async (req: Request, res: Response , increaseActiveIns
             sendEmail(result);
         }
 
-        if(result && req.body.dataFileTrue && req.body.dataFilePath){
+        if (result && req.body.dataFileTrue && req.body.dataFilePath) {
             console.log(result);
             console.log(req.body.dataFilePath);
         }
 
-        await closeBrowser(userId , decreaseActiveInstances);
+        await closeBrowser(userId, decreaseActiveInstances);
     } catch (error) {
         logger.error(error);
         if (!res.headersSent) {
@@ -240,11 +267,11 @@ const handleSaveDataEXL = async (req: Request, res: Response , increaseActiveIns
     }
 };
 
-export const scrapperService = { 
+export const scrapperService = {
     saveDatatoEXL,
     handleSaveDataEXL,
     getUserIdFromRequest,
     userSessions,
     launchBrowser,
     closeBrowser,
- };
+};
