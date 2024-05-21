@@ -3,10 +3,10 @@ import { Request, Response } from 'express';
 import path from 'path';
 import puppeteer, { Browser } from 'puppeteer';
 import { ApiResponse } from '../../../utils/ApiResponse';
+import sendEmail from '../../../utils/emailSender';
 import logger from '../../../utils/logger';
 import userSessions from '../../../utils/userSeassion';
 import { ClientData } from './scrapper.interface';
-import sendEmail from '../../../utils/emailSender';
 
 const timeout = 120000; // Increased timeout to 2 minutes for page actions
 
@@ -21,8 +21,8 @@ const saveDatatoEXL = async (
     console.time('Total processing time');
     const records: ClientData[] = [];
 
-    const clientsPerPage = Math.ceil(clientIDs.length / 5);
-    logger.info(`Clients per browser instance: ${clientsPerPage}`);
+    const clientsPerBrowser = Math.ceil(clientIDs.length / 3);
+    logger.info(`Clients per browser instance: ${clientsPerBrowser}`);
     const totalClients = clientIDs.length;
     totalDataCount(totalClients);
 
@@ -47,14 +47,33 @@ const saveDatatoEXL = async (
     });
 
     const browserPromises = [];
-    for (let index = 0; index < totalClients; index += clientsPerPage) {
-        const clientIDSubset = clientIDs.slice(index, index + clientsPerPage);
+    for (let index = 0; index < totalClients; index += clientsPerBrowser) {
+        const clientIDSubset = clientIDs.slice(index, index + clientsPerBrowser);
         browserPromises.push(processBrowserInstance(clientIDSubset, req, records, totalDataSavedCount));
     }
 
     logger.info(`Total browsers: ${browserPromises.length}`);
 
     await Promise.all(browserPromises);
+
+    // Retry logic for failed client IDs
+    const maxRetries = 3;
+    let retryCount = 0;
+    while (records.length !== clientIDs.length && retryCount < maxRetries) {
+        console.log(`Expected records: ${clientIDs.length}, Processed records: ${records.length}`);
+        logger.warn(`Some records were not processed. Retrying... Attempt ${retryCount + 1}`);
+        const failedClientIDs = clientIDs.filter(id => !records.some(record => record.clientID === id));
+        const failedRecords: ClientData[] = [];
+        logger.warn(`Failed records: ${failedClientIDs.length}`);
+        const failedBrowserPromises = [];
+        for (let index = 0; index < failedClientIDs.length; index += clientsPerBrowser) {
+            const clientIDSubset = failedClientIDs.slice(index, index + clientsPerBrowser);
+            failedBrowserPromises.push(processBrowserInstance(clientIDSubset, req, failedRecords, totalDataSavedCount));
+        }
+        await Promise.all(failedBrowserPromises);
+        records.push(...failedRecords);
+        retryCount++;
+    }
 
     const chunkSize = 100;
     for (let i = 0; i < records.length; i += chunkSize) {
@@ -65,15 +84,8 @@ const saveDatatoEXL = async (
     console.log(`Expected records: ${clientIDs.length}, Processed records: ${records.length}`);
     if (records.length !== clientIDs.length) {
         console.warn('Some records were not processed. Please check the logs for details.');
-
-        const unprocessedClientIDs : string[] = [];
-        for (const id in records) {
-            console.log(id);
-        }
-        console.warn('Unprocessed client IDs:', unprocessedClientIDs);
-        console.log(unprocessedClientIDs.length);
-        
     }
+
     console.timeEnd('Total processing time');
     logger.info('Data saved successfully!');
 
@@ -81,11 +93,12 @@ const saveDatatoEXL = async (
 };
 
 async function processBrowserInstance(clientIDSubset: string[], req: Request, records: ClientData[], totalDataSavedCount: (data: number) => void) {
-    const browser = await launchBrowser();
-    const page = await browser.newPage();
-    page.setDefaultTimeout(timeout);
-
+    let browser: Browser | null = null;
     try {
+        browser = await launchBrowser();
+        const page = await browser.newPage();
+        page.setDefaultTimeout(timeout);
+
         await page.goto("https://epaces.emedny.org");
         await page.type('#Username', (req.body.username).toString());
         await page.type('#Password', (req.body.pass).toString());
@@ -134,6 +147,11 @@ async function processBrowserInstance(clientIDSubset: string[], req: Request, re
                     });
 
                     if (clientData.clientID) {
+                        // if data already exists, skip
+                        if (records.some(record => record.clientID === clientData.clientID)) {
+                            logger.info(`Data for client ID: ${id} already exists. Skipping...`);
+                            continue;
+                        }
                         records.push(clientData);
                     }
                     success = true;
@@ -153,9 +171,11 @@ async function processBrowserInstance(clientIDSubset: string[], req: Request, re
     } catch (error) {
         logger.error('Error occurred on page:', error);
     } finally {
-        await browser.close();
+        if (browser) {
+            await browser.close();
+        }
     }
-};
+}
 
 // Get user ID from request
 const getUserIdFromRequest = (req: Request): string => {
@@ -224,32 +244,19 @@ const handleSaveDataEXL = async (req: Request, res: Response, increaseActiveInst
 
         if (result && !req.body.dataFileTrue) {
             sendEmail(result);
-            // stop all the browser instance 
-            await closeBrowser(userId, decreaseActiveInstances);
         }
 
         if (result && req.body.dataFileTrue && req.body.dataFilePath) {
             console.log(result);
             console.log(req.body.dataFilePath);
-            await closeBrowser(userId, decreaseActiveInstances);
         }
 
         decreaseActiveInstances();
     } catch (error) {
         logger.error(error);
-        await closeBrowser(userId, decreaseActiveInstances);
         if (!res.headersSent) {
             res.status(500).json(new ApiResponse(500, { message: 'An error occurred while processing your request.' }));
         }
-    }
-};
-
-// Close browser
-const closeBrowser = async (userId: string, decreaseActiveInstances: Function) => {
-    const session = userSessions.get(userId);
-    if (session) {
-        userSessions.delete(userId);
-        decreaseActiveInstances();
     }
 };
 
