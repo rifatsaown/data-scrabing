@@ -27,7 +27,7 @@ const saveDatatoEXL = async (
     console.time('Total processing time');
     const records: ClientData[] = [];
   
-    const clientsPerPage = Math.ceil(clientIDs.length / 2);
+    const clientsPerPage = Math.ceil(clientIDs.length / 5);
     logger.info(`Clients per page: ${clientsPerPage}`);
     const totalClients = clientIDs.length;
     totalDataCount(totalClients);
@@ -52,7 +52,7 @@ const saveDatatoEXL = async (
         ]
     });
 
-     const pagePromises = [];
+    const pagePromises = [];
     for (let index = 0; index < totalClients; index += clientsPerPage) {
     const clientIDSubset = clientIDs.slice(index, index + clientsPerPage);
     pagePromises.push(processPageOptimized(clientIDSubset, req, records, maxRetries, retryDelay, timeout, totalDataSavedCount));
