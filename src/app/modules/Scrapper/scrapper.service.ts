@@ -10,6 +10,28 @@ import { ClientData } from './scrapper.interface';
 
 const timeout = 120000; // Increased timeout to 2 minutes for page actions
 
+
+const userList = [
+    {
+        username: 'username1',
+        pass: 'password1',
+    },
+    {
+        username: 'username2',
+        pass: 'password2',
+    },
+    {
+        username: 'username3',
+        pass: 'password3',
+    },
+];
+
+const getUser = (index: number) => {
+    return userList[(index - 1) % userList.length];
+};
+
+
+
 const saveDatatoEXL = async (
     clientIDs: string[],
     req: Request,
@@ -21,7 +43,8 @@ const saveDatatoEXL = async (
     console.time('Total processing time');
     const records: ClientData[] = [];
 
-    const clientsPerBrowser = Math.ceil(clientIDs.length / 3);
+    const browsersCount = 5; // Number of browser instances to run in parallel
+    const clientsPerBrowser = Math.ceil(clientIDs.length / browsersCount);
     logger.info(`Clients per browser instance: ${clientsPerBrowser}`);
     const totalClients = clientIDs.length;
     totalDataCount(totalClients);
@@ -47,9 +70,9 @@ const saveDatatoEXL = async (
     });
 
     const browserPromises = [];
-    for (let index = 0; index < totalClients; index += clientsPerBrowser) {
-        const clientIDSubset = clientIDs.slice(index, index + clientsPerBrowser);
-        browserPromises.push(processBrowserInstance(clientIDSubset, req, records, totalDataSavedCount));
+    for (let i = 0; i < browsersCount; i++) {
+        const clientIDSubset = clientIDs.slice(i * clientsPerBrowser, (i + 1) * clientsPerBrowser);
+        browserPromises.push(processBrowserInstance(clientIDSubset, req, records, totalDataSavedCount , i+1));
     }
 
     logger.info(`Total browsers: ${browserPromises.length}`);
@@ -57,22 +80,20 @@ const saveDatatoEXL = async (
     await Promise.all(browserPromises);
 
     // Retry logic for failed client IDs
-    const maxRetries = 3;
     let retryCount = 0;
-    while (records.length !== clientIDs.length && retryCount < maxRetries) {
+    if (records.length !== clientIDs.length ) {
         console.log(`Expected records: ${clientIDs.length}, Processed records: ${records.length}`);
         logger.warn(`Some records were not processed. Retrying... Attempt ${retryCount + 1}`);
         const failedClientIDs = clientIDs.filter(id => !records.some(record => record.clientID === id));
         const failedRecords: ClientData[] = [];
         logger.warn(`Failed records: ${failedClientIDs.length}`);
         const failedBrowserPromises = [];
-        for (let index = 0; index < failedClientIDs.length; index += clientsPerBrowser) {
-            const clientIDSubset = failedClientIDs.slice(index, index + clientsPerBrowser);
-            failedBrowserPromises.push(processBrowserInstance(clientIDSubset, req, failedRecords, totalDataSavedCount));
+        for (let i = 0; i < browsersCount; i++) {
+            const clientIDSubset = failedClientIDs.slice(i * clientsPerBrowser, (i + 1) * clientsPerBrowser);
+            failedBrowserPromises.push(processBrowserInstance(clientIDSubset, req, failedRecords, totalDataSavedCount, i+1));
         }
         await Promise.all(failedBrowserPromises);
         records.push(...failedRecords);
-        retryCount++;
     }
 
     const chunkSize = 100;
@@ -92,7 +113,7 @@ const saveDatatoEXL = async (
     return `${csvFilePath}`;
 };
 
-async function processBrowserInstance(clientIDSubset: string[], req: Request, records: ClientData[], totalDataSavedCount: (data: number) => void) {
+async function processBrowserInstance(clientIDSubset: string[], req: Request, records: ClientData[], totalDataSavedCount: (data: number) => void , browserCount : number){
     let browser: Browser | null = null;
     try {
         browser = await launchBrowser();
@@ -100,7 +121,7 @@ async function processBrowserInstance(clientIDSubset: string[], req: Request, re
         page.setDefaultTimeout(timeout);
 
         await page.goto("https://epaces.emedny.org");
-        await page.type('#Username', (req.body.username).toString());
+        await page.type('#Username', (getUser(browserCount).username).toString());
         await page.type('#Password', (req.body.pass).toString());
         await page.click('#chkbxAgree');
         await page.click('#btnAgreeLogin');
@@ -110,8 +131,20 @@ async function processBrowserInstance(clientIDSubset: string[], req: Request, re
             const maxRetries = 3;
             const retryDelay = 3000;
             let success = false;
+            
+            
 
             while (!success && retryCount < maxRetries) {
+                console.log(`Processing client ID: ${id}`);
+            console.log(`Records length: ${records.length}`);
+
+            // if data already exists in records, then skip
+            if(records.some(record => record.clientID === id)) {
+                logger.info(`${id} already exists. Skipping...`);
+                success = true; // skip this client ID
+                continue;
+            }
+                
                 try {
                     await page.waitForSelector('#ctl00_Menu1_linkEligibilityRequest');
                     await page.click('#ctl00_Menu1_linkEligibilityRequest');
@@ -149,7 +182,7 @@ async function processBrowserInstance(clientIDSubset: string[], req: Request, re
                     if (clientData.clientID) {
                         // if data already exists, skip
                         if (records.some(record => record.clientID === clientData.clientID)) {
-                            logger.info(`Data for client ID: ${id} already exists. Skipping...`);
+                            logger.info(`Data for client ID: ${id} already exists. Skipping... from this instance`);
                             continue;
                         }
                         records.push(clientData);
@@ -195,6 +228,7 @@ const totalDataCount = (userId: string, data: number) => {
         session.totalData = data;
     }
 };
+
 
 // Total data saved count
 const totalDataSavedCount = (userId: string, data: number) => {
@@ -244,19 +278,31 @@ const handleSaveDataEXL = async (req: Request, res: Response, increaseActiveInst
 
         if (result && !req.body.dataFileTrue) {
             sendEmail(result);
+            closeBrowser(userId, decreaseActiveInstances);
         }
 
         if (result && req.body.dataFileTrue && req.body.dataFilePath) {
             console.log(result);
             console.log(req.body.dataFilePath);
+            closeBrowser(userId, decreaseActiveInstances);
         }
 
         decreaseActiveInstances();
     } catch (error) {
         logger.error(error);
+        closeBrowser(userId, decreaseActiveInstances);
         if (!res.headersSent) {
             res.status(500).json(new ApiResponse(500, { message: 'An error occurred while processing your request.' }));
         }
+    }
+};
+
+// close browser
+const closeBrowser = async (userId: string, decreaseActiveInstances: Function) => {
+    const session = userSessions.get(userId);
+    if (session) {
+        userSessions.delete(userId);
+        decreaseActiveInstances();
     }
 };
 
